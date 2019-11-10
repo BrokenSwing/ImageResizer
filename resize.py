@@ -58,11 +58,11 @@ def resize_image(file: pathlib.Path, indir: pathlib.Path, outdir: pathlib.Path, 
 
     with Image.open(file.resolve()) as img:
         if width and height:
-            resized = resizeimage.resize_contain(img, [width, height])
+            resized = resizeimage.resize_thumbnail(img, [width, height])
         elif width:
             resized = resizeimage.resize_width(img, width)
         else:
-            resized = resizeimage.resize_crop(img, height)
+            resized = resizeimage.resize_height(img, height)
         final_path = file.relative_to(indir)
         final_path = outdir.joinpath(final_path)
         if not final_path.parent.exists():
