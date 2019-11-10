@@ -4,6 +4,34 @@ from resizeimage import resizeimage
 import pathlib
 from multiprocessing import Pool, cpu_count
 import time
+import shutil
+
+
+class ProgressBar:
+
+    def __init__(self, end=100):
+        self.end = end
+        self.current = 0
+
+    def on_result(self, result):
+        self.next()
+        self.print_progress()
+
+    def next(self):
+        self.current += 1
+
+    def print_progress(self, prefix='', suffix='', length=100, fill='█', autosize=True):
+        percent = "{0:.1f}".format(100 * (self.current / float(self.end)))
+        styling = '%s |%s| %s%% %s' % (prefix, fill, percent, suffix)
+        if autosize:
+            cols, _ = shutil.get_terminal_size(fallback=(length, 1))
+            length = cols - len(styling)
+        filled_length = int(length * self.current // self.end)
+        bar = fill * filled_length + '-' * (length - filled_length)
+        print('\r%s' % styling.replace(fill, bar), end='\r')
+        # Print New Line on Complete
+        if self.current == self.end:
+            print()
 
 
 def open_dir(path):
@@ -20,12 +48,12 @@ def open_file(path):
     raise argparse.ArgumentTypeError("File '{0}' doesn't exist or isn't a file".format(path))
 
 
-def worker(arguments):
-    path, directory, outdir, width, height = arguments
+def worker(path, directory, outdir, width, height):
     resize_image(path, directory, outdir, width=width, height=height)
 
 
-def resize_dir(directory: pathlib.Path, outdir: pathlib.Path, recursive=False, width=None, height=None, ext="jpg"):
+def resize_dir(directory: pathlib.Path, outdir: pathlib.Path, recursive=False, width=None, height=None, ext="jpg",
+               no_progress=False):
     if recursive:
         generator = directory.glob('**/*.{0}'.format(ext))
     else:
@@ -42,13 +70,19 @@ def resize_dir(directory: pathlib.Path, outdir: pathlib.Path, recursive=False, w
     if response.lower() not in ["y", "yes"]:
         print("Canceled.")
     else:
-        start = time.time()
-        exp = []
-        for path in paths:
-            exp.append([path, directory, outdir, width, height])
-        with Pool(cpu_count()) as p:
-            p.map(worker, exp)
+        if no_progress:
+            cb = None
+        else:
+            progress = ProgressBar(end=total)
+            cb = progress.on_result
 
+        start = time.time()
+
+        p = Pool(cpu_count())
+        for path in paths:
+            p.apply_async(worker, args=(path, directory, outdir, width, height), callback=cb)
+        p.close()
+        p.join()
         end = time.time()
         print("Took {0:.2f} sec.".format(end - start))
 
@@ -89,6 +123,8 @@ if __name__ == "__main__":
                         required=True)
     parser.add_argument('--ext', type=str, default="jpg",
                         help="The image extension (ex: jpg, jpeg, png, ...). (default: %(default)s)")
+    parser.add_argument("--no-progress", default=False, action="store_const", const=True,
+                        help="Should progress bar be displayed (default: %(default)s)")
 
     args = parser.parse_args()
     if not (args.width or args.height):
@@ -101,6 +137,7 @@ if __name__ == "__main__":
         parser.error('You must choose between --dir and --file')
 
     if args.dir:
-        resize_dir(args.dir, args.outdir, recursive=args.recursive, width=args.width, height=args.height, ext=args.ext)
+        resize_dir(args.dir, args.outdir, recursive=args.recursive, width=args.width, height=args.height, ext=args.ext,
+                   no_progress=args.no_progress)
     else:
         resize_image(args.file, pathlib.Path('.'), args.outdir, width=args.width, height=args.height)
