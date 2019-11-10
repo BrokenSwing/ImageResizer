@@ -48,16 +48,19 @@ def open_file(path):
     raise argparse.ArgumentTypeError("File '{0}' doesn't exist or isn't a file".format(path))
 
 
-def worker(path, directory, outdir, width, height):
-    resize_image(path, directory, outdir, width=width, height=height)
+def worker(path, directory, outdir, width, height, verbose):
+    resize_image(path, directory, outdir, width=width, height=height, verbose=verbose)
 
 
 def resize_dir(directory: pathlib.Path, outdir: pathlib.Path, recursive=False, width=None, height=None, ext="jpg",
-               no_progress=False):
+               no_progress=False, verbose=False):
+    if verbose:
+        print("Searching {0}{1} files in directory {2}"
+              .format("recursively " if recursive else "", ext, directory.resolve()))
     if recursive:
         generator = directory.glob('**/*.{0}'.format(ext))
     else:
-        generator = directory.glob('*.jpg')
+        generator = directory.glob('*.{0}'.format(ext))
 
     paths = []
     for path in generator:
@@ -76,19 +79,25 @@ def resize_dir(directory: pathlib.Path, outdir: pathlib.Path, recursive=False, w
             progress = ProgressBar(end=total)
             cb = progress.on_result
 
+        if verbose:
+            print("Starting files process")
+
         start = time.time()
 
         p = Pool(cpu_count())
         for path in paths:
-            p.apply_async(worker, args=(path, directory, outdir, width, height), callback=cb)
+            p.apply_async(worker, args=(path, directory, outdir, width, height, verbose), callback=cb)
         p.close()
         p.join()
         end = time.time()
         print("Took {0:.2f} sec.".format(end - start))
 
 
-def resize_image(file: pathlib.Path, indir: pathlib.Path, outdir: pathlib.Path, width=None, height=None):
+def resize_image(file: pathlib.Path, indir: pathlib.Path, outdir: pathlib.Path, width=None, height=None, verbose=False):
     assert width or height, "At least height or width must be specified"
+
+    if verbose:
+        print("Opening file {}".format(file))
 
     with Image.open(file.resolve()) as img:
         if width and height:
@@ -97,11 +106,18 @@ def resize_image(file: pathlib.Path, indir: pathlib.Path, outdir: pathlib.Path, 
             resized = resizeimage.resize_width(img, width)
         else:
             resized = resizeimage.resize_height(img, height)
+
+        if verbose:
+            print("File {} resized. Will save it.".format(file))
+
         final_path = file.relative_to(indir)
         final_path = outdir.joinpath(final_path)
         if not final_path.parent.exists():
             final_path.parent.mkdir(parents=True)
         resized.save(final_path, resized.format)
+
+        if verbose:
+            print("Saved resized version of {} to {}".format(file, final_path))
 
 
 if __name__ == "__main__":
@@ -119,12 +135,14 @@ if __name__ == "__main__":
     parser.add_argument('-r', '--recursive', const=True, action='store_const', default=False,
                         help="iterates over directory recursively (default: %(default)s)")
     parser.add_argument('-f', '--file', type=open_file, help="the image to resize")
-    parser.add_argument('-o', '--outdir', type=open_dir, help="The directory to put the resized files in (mandatory)",
+    parser.add_argument('-o', '--outdir', type=open_dir, help="the directory to put the resized files in (mandatory)",
                         required=True)
     parser.add_argument('--ext', type=str, default="jpg",
                         help="The image extension (ex: jpg, jpeg, png, ...). (default: %(default)s)")
     parser.add_argument("--no-progress", default=False, action="store_const", const=True,
-                        help="Should progress bar be displayed (default: %(default)s)")
+                        help="if specified, progress bar won't be displayed (default: %(default)s)")
+    parser.add_argument("-v", "--verbose", action="store_const", const=True, default=False,
+                        help="if specified, set the program verbose (default: %(default)s)")
 
     args = parser.parse_args()
     if not (args.width or args.height):
@@ -138,6 +156,7 @@ if __name__ == "__main__":
 
     if args.dir:
         resize_dir(args.dir, args.outdir, recursive=args.recursive, width=args.width, height=args.height, ext=args.ext,
-                   no_progress=args.no_progress)
+                   no_progress=args.no_progress, verbose=args.verbose)
     else:
-        resize_image(args.file, pathlib.Path('.'), args.outdir, width=args.width, height=args.height)
+        resize_image(args.file, pathlib.Path('.'), args.outdir, width=args.width, height=args.height,
+                     verbose=args.verbose)
