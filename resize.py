@@ -20,9 +20,9 @@ class ProgressBar:
     def next(self):
         self.current += 1
 
-    def print_progress(self, prefix='', suffix='', length=100, fill='█', autosize=True):
+    def print_progress(self, length=100, fill='█', autosize=True):
         percent = "{0:.1f}".format(100 * (self.current / float(self.end)))
-        styling = '%s |%s| %s%% %s' % (prefix, fill, percent, suffix)
+        styling = '%s/%s |%s| %s%%' % (self.current, self.end, fill, percent)
         if autosize:
             cols, _ = shutil.get_terminal_size(fallback=(length, 1))
             length = cols - len(styling)
